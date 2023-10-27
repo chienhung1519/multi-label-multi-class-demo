@@ -64,7 +64,7 @@ class MultiLabelMultiClassDataset:
                 examples.append({
                     "ReviewTitle": row["ReviewTitle"],
                     "ReviewText": row["ReviewText"],
-                    "aspect_id": self.aspect_to_id(aspect),
+                    "aspect_ids": self.aspect_to_id(aspect),
                     "labels": row[aspect]
                 })
         return pd.DataFrame(examples)
