@@ -1,0 +1,17 @@
+Airline#
+AirlineName
+ReviewerName
+Rating
+ReviewDate
+ReviewTitle
+ReviewText
+FlightType
+DateofTravel
+Aspects
+ResponserName
+ResponseDate
+ResponseText
+ReviewerProfileRrl
+UserReviewLink
+AirlineReviewLink
+CrawlTime
