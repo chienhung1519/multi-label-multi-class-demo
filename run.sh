@@ -1,5 +1,5 @@
 python run.py \
-    --output_dir ./output \
+    --output_dir ./outputs \
     --data_path "./data/raw/Top10_airlines_reviews(2016-2023Jul).txt" \
     --model_name_or_path bert-base-uncased \
     --max_seq_length 512 \
