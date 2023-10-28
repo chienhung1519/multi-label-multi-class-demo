@@ -1,3 +1,5 @@
+from typing import List, Dict
+import numpy as np
 import torch
 from torch import nn
 from transformers import AutoModel, EvalPrediction
@@ -35,7 +37,7 @@ class SequenceClassificationHead(nn.Module):
             self.classifier.bias.data.zero_()
 
 
-class MultiTaskModel(nn.Module):
+class MultiLabelMultiClassModel(nn.Module):
     def __init__(self, encoder_name_or_path, num_labels, aspect_ids: List):
         super().__init__()
 
@@ -99,7 +101,7 @@ class MultiTaskModel(nn.Module):
         return outputs
 
 
-def compute_metrics(p: EvalPrediction):
+def compute_metrics(p: EvalPrediction) -> Dict:
     preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
     preds = np.argmax(preds, axis=1)
     return {"accuracy": (preds == p.label_ids).astype(np.float32).mean().item()}

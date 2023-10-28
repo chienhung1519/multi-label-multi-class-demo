@@ -2,6 +2,7 @@ import pandas as pd
 from datasets import Dataset
 import json
 from pathlib import Path
+from typing import List
 
 
 class MultiLabelMultiClassDataset:
@@ -11,26 +12,26 @@ class MultiLabelMultiClassDataset:
         self.args = args
 
         # Load label mappings
-        self.aspect2id = json.loads(Path(self.args.resources_dir, "aspect_mapping.json").read_text())
+        self.aspect2id = json.loads(Path(self.args.src_dir, "aspect_mapping.json").read_text())
         self.id2aspect = {v: k for k, v in self.aspect2id.items()}
-        self.label2id = json.loads(Path(self.args.resources_dir, "label_mapping.json").read_text())
+        self.label2id = json.loads(Path(self.args.src_dir, "label_mapping.json").read_text())
         self.id2label = {v: k for k, v in self.label2id.items()}
 
         # Load data
         self.train_data = self.load_data(self.args.train_data_path)
-        self.val_data = self.load_data(self.args.val_data_path)
+        self.eval_data = self.load_data(self.args.eval_data_path)
         self.test_data = self.load_data(self.args.test_data_path)
 
         # Generate datasets
         self.train_dataset = self.generate_dataset(self.train_data)
-        self.val_dataset = self.generate_dataset(self.val_data)
+        self.eval_dataset = self.generate_dataset(self.eval_data)
         self.test_dataset = self.generate_dataset(self.test_data)
+        self.train_dataset.shuffle(seed=self.args.seed)
 
     def load_data(self, path:str) -> pd.DataFrame:
         if path is None:
             return None
-        data = pd.read_csv(path)
-        data.columns = Path(self.args.resources_dir, "column_names.txt").read_text().splitlines()
+        data = pd.read_json(path)
         return self.preprocess(data)
     
     def preprocess(self, data:pd.DataFrame) -> pd.DataFrame:
@@ -73,17 +74,36 @@ class MultiLabelMultiClassDataset:
         if data is None:
             return None
         dataset = Dataset.from_pandas(data)
-        return dataset.map(self.tokenize_function, batched=True, remove_columns=["ReviewTitle", "ReviewText"])
+        dataset = dataset.map(self.tokenize_function, batched=True, remove_columns=["ReviewTitle", "ReviewText"])
+        dataset.set_format(type="torch", columns=dataset.column_names)
+        return dataset
 
     def tokenize_function(self, examples:dict) -> dict:
         inputs = self.tokenizer(
-            f"{examples["ReviewTitle"]}. {examples["ReviewText"]}", truncation=True, max_length=self.args.max_length, padding="max_length"
+            f"{examples['ReviewTitle']}. {examples['ReviewText']}", truncation=True, max_length=self.args.max_seq_length, padding="max_length"
         )
         return inputs
+    
+    def train_dataset(self) -> Dataset:
+        return self.train_dataset
+    
+    def eval_dataset(self) -> Dataset:
+        return self.eval_dataset
+    
+    def test_dataset(self) -> Dataset:
+        return self.test_dataset
 
     @property
     def num_labels(self) -> int:
         return len(self.label2id)
+    
+    @property
+    def aspect_ids(self) -> List:
+        return sorted(list(self.aspect2id.values()))
+    
+    @property
+    def aspect_names(self) -> List:
+        return sorted(list(self.aspect2id.keys()))
 
     def label_to_id(self, label:str) -> int:
         return self.label2id[label]

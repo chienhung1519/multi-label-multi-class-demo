@@ -14,3 +14,8 @@ Multi-Label Multi-Class Bert Model with K-fold validation.
 | Seat comfort            |  4,747 | 5,803 | 30,449 | 53,195 | 49,971 |        43,011 |
 | Value for money         |  6,796 | 5,431 | 18,361 | 42,241 | 68,867 |        45,480 |
 
+## Run script
+
+```
+bash run.sh
+```
