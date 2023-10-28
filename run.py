@@ -1,5 +1,6 @@
 from argparse import ArgumentParser, Namespace
 import pandas as pd
+import numpy as np
 from pathlib import Path
 from sklearn.metrics import classification_report
 from sklearn.model_selection import KFold
@@ -41,32 +42,37 @@ def main():
     set_seed(args.seed)
 
     # Load data
-    data = pd.read_csv(args.data_path)
-    data.columns = Path(args.src_dir, "column_names.txt").read_text().splitlines()
+    column_names = Path(args.src_dir, "column_names.txt").read_text().splitlines()
+    data = pd.read_csv(args.data_path, sep="\t", names=column_names, encoding="utf-8")
 
     # Generate K-fold cross validation data
     kf = KFold(n_splits=args.n_splits, shuffle=True, random_state=args.seed)
     for i, (train_index, test_index) in enumerate(kf.split(data)):
+        # Create data directory
+        data_dir = Path(args.data_path).parents[1] / "processed" / f"fold_{i+1}"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        # Skip if data already exists
+        if (data_dir / "train.json").exists() and (data_dir / "eval.json").exists() and (data_dir / "test.json").exists():
+            continue
+        # Split data
         train = data.iloc[train_index]
         test =  data.iloc[test_index]
         eval = train.sample(n=len(test)//2, random_state=args.seed)
         train = train.drop(eval.index)
-
-        data_dir = Path(args.data_path).parents[0] / "processed" / f"fold_{i+1}"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        train.to_json(data_dir / "/train.json", orient="records", indent=2)
-        eval.to_json(data_dir / "/eval.json", orient="records", indent=2)
-        test.to_json(data_dir / "/test.json", orient="records", indent=2)
+        # Save data
+        train.to_json(data_dir / "train.json", orient="records", indent=2)
+        eval.to_json(data_dir / "eval.json", orient="records", indent=2)
+        test.to_json(data_dir / "test.json", orient="records", indent=2)
 
     # Store base output_dir
     base_output_dir = args.output_dir
 
     # Start K-fold cross validation
     for i in range(args.n_splits):
-        args.train_data_path = Path(args.data_path).parents[0] / "processed" / f"fold_{i+1}" / "train.json"
-        args.eval_data_path = Path(args.data_path).parents[0] / "processed" / f"fold_{i+1}" / "eval.json"
-        args.test_data_path = Path(args.data_path).parents[0] / "processed" / f"fold_{i+1}" / "test.json"
-        args.output_dir = Path(args.output_dir) / f"fold_{i+1}"
+        args.train_data_path = Path(args.data_path).parents[1] / "processed" / f"fold_{i+1}" / "train.json"
+        args.eval_data_path = Path(args.data_path).parents[1] / "processed" / f"fold_{i+1}" / "eval.json"
+        args.test_data_path = Path(args.data_path).parents[1] / "processed" / f"fold_{i+1}" / "test.json"
+        args.output_dir = base_output_dir + "/" + f"fold_{i+1}"
 
         # Load datasets
         tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
@@ -91,50 +97,64 @@ def main():
             load_best_model_at_end=True,
             metric_for_best_model="accuracy",
             greater_is_better=True,
-            save_steps=500,
+            evaluation_strategy="epoch",
+            save_strategy="epoch",
             save_total_limit=1,
-            learning_rate=args.learning_rate,
+            fp16=True,
             per_device_train_batch_size=args.train_batch_size,
             per_device_eval_batch_size=args.eval_batch_size,
             overwrite_output_dir=True,
+            report_to="none",
         )
 
         # Initialize Trainer
         trainer = Trainer(
             model=model,
             args=training_args,
-            train_dataset=dataset_module.train_dataset(),
-            eval_dataset=dataset_module.eval_dataset(),
+            train_dataset=dataset_module.train_dataset,
+            eval_dataset=dataset_module.eval_dataset,
             compute_metrics=compute_metrics,
         )
 
         # Training
         train_result = trainer.train()
         metrics = train_result.metrics
-        metrics["train_samples"] = len(dataset_module.train_dataset())
+        metrics["train_samples"] = len(dataset_module.train_dataset)
         trainer.save_model()  # Saves the tokenizer too for easy upload
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
         trainer.save_state()
 
         # Test
-        predictions = trainer.predict(dataset_module.test_dataset())
-        y_predict = [dataset_module.id_to_label(p) for p in predictions.predictions.argmax(axis=-1)]
+        predictions = trainer.predict(dataset_module.test_dataset)
+        preds = predictions.predictions[0] if isinstance(predictions.predictions, tuple) else predictions.predictions
+        y_predict = [dataset_module.id_to_label(p) for p in np.argmax(preds, axis=1)]
         outputs = pd.concat(
             [dataset_module.test_data, pd.DataFrame(y_predict, columns=["predictions"])], axis=1
         )
+        outputs["aspect"] = outputs["aspect_ids"].apply(dataset_module.id_to_aspect)
+        outputs["labels"] = outputs["labels"].apply(dataset_module.id_to_label)
+        outputs = outputs[["ReviewTitle", "ReviewText", "aspect", "labels", "predictions"]]
         outputs.to_excel(args.output_dir+"/outputs.xlsx", index=False)
 
     # Classification report
     all_outputs = pd.DataFrame()
     for i in range(args.n_splits):
-        outputs = pd.read_excel(Path(args.output_dir) / f"fold_{i+1}" / "outputs.xlsx")
+        outputs = pd.read_excel(Path(base_output_dir) / f"fold_{i+1}" / "outputs.xlsx")
         all_outputs = pd.concat([all_outputs, outputs], axis=0)
-    results = {}
+    results = []
     for aspect_name in dataset_module.aspect_names:
-        aspect_outputs = outputs[outputs["aspect_ids"]==aspect_name]
-        results[aspect_name] = classification_report(aspect_outputs["labels"], aspect_outputs["predictions"], output_dict=True, digits=4)
-    results = pd.DataFrame(results).transpose()
+        aspect_outputs = outputs[outputs["aspect"]==aspect_name]
+        cr = classification_report(aspect_outputs["labels"], aspect_outputs["predictions"], output_dict=True, digits=4)
+        aspect_results = []
+        label_list = ["Negative", "Positive", "NoFillingIn"]
+        metric_list = ["precision", "recall", "f1-score"]
+        for label in label_list:
+            aspect_results.extend([cr[label]["precision"], cr[label]["recall"], cr[label]["f1-score"]])
+        results.append([aspect_name] + aspect_results)
+    results = pd.DataFrame(results)
+    results.set_index(0, inplace=True)
+    results.columns = pd.MultiIndex.from_tuples([(label, metric) for label in label_list for metric in metric_list])
     results.to_excel(base_output_dir + "/classification_report.xlsx")
             
 if __name__ == "__main__":

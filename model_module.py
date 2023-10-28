@@ -41,6 +41,7 @@ class MultiLabelMultiClassModel(nn.Module):
     def __init__(self, encoder_name_or_path, num_labels, aspect_ids: List):
         super().__init__()
 
+        self.num_labels = num_labels
         self.encoder = AutoModel.from_pretrained(encoder_name_or_path)
 
         self.output_heads = nn.ModuleDict()
@@ -76,16 +77,18 @@ class MultiLabelMultiClassModel(nn.Module):
         unique_aspect_ids_list = torch.unique(aspect_ids).tolist()
 
         loss_list = []
-        logits = None
+        logits = torch.zeros((labels.shape[0], self.num_labels), device=labels.device)
         for unique_aspect_id in unique_aspect_ids_list:
 
             aspect_id_filter = aspect_ids == unique_aspect_id
-            logits, aspect_loss = self.output_heads[str(unique_aspect_id)].forward(
+            aspect_logits, aspect_loss = self.output_heads[str(unique_aspect_id)].forward(
                 sequence_output[aspect_id_filter],
                 pooled_output[aspect_id_filter],
                 labels=None if labels is None else labels[aspect_id_filter],
                 attention_mask=attention_mask[aspect_id_filter],
             )
+
+            logits[aspect_id_filter] = aspect_logits
 
             if labels is not None:
                 loss_list.append(aspect_loss)

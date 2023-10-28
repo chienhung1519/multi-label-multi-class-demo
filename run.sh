@@ -1,6 +1,6 @@
 python run.py \
     --output_dir ./output \
-    --data_path ./data/raw/Top10_airlines_reviews(2016-2023Jul).txt \
+    --data_path "./data/raw/Top10_airlines_reviews(2016-2023Jul).txt" \
     --model_name_or_path bert-base-uncased \
     --max_seq_length 512 \
     --train_batch_size 16 \

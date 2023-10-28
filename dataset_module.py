@@ -80,18 +80,10 @@ class MultiLabelMultiClassDataset:
 
     def tokenize_function(self, examples:dict) -> dict:
         inputs = self.tokenizer(
-            f"{examples['ReviewTitle']}. {examples['ReviewText']}", truncation=True, max_length=self.args.max_seq_length, padding="max_length"
+            [f"{title}. {review}" for title, review in zip(examples["ReviewTitle"], examples["ReviewText"])],
+            truncation=True, max_length=self.args.max_seq_length, padding="max_length"
         )
         return inputs
-    
-    def train_dataset(self) -> Dataset:
-        return self.train_dataset
-    
-    def eval_dataset(self) -> Dataset:
-        return self.eval_dataset
-    
-    def test_dataset(self) -> Dataset:
-        return self.test_dataset
 
     @property
     def num_labels(self) -> int:
