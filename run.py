@@ -135,12 +135,12 @@ def main():
         outputs["aspect"] = outputs["aspect_ids"].apply(dataset_module.id_to_aspect)
         outputs["labels"] = outputs["labels"].apply(dataset_module.id_to_label)
         outputs = outputs[["ReviewTitle", "ReviewText", "aspect", "labels", "predictions"]]
-        outputs.to_excel(args.output_dir+"/outputs.xlsx", index=False)
+        outputs.to_json(args.output_dir+"/outputs.json", orient="records", indent=2)
 
     # Classification report
     all_outputs = pd.DataFrame()
     for i in range(args.n_splits):
-        outputs = pd.read_excel(Path(base_output_dir) / f"fold_{i+1}" / "outputs.xlsx")
+        outputs = pd.read_json(Path(base_output_dir) / f"fold_{i+1}" / "outputs.json")
         all_outputs = pd.concat([all_outputs, outputs], axis=0)
     results = []
     for aspect_name in dataset_module.aspect_names:
